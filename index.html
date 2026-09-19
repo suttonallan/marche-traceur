@@ -162,7 +162,10 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     var k=p.coords; precision=k.accuracy;
     var brut=xy(k.latitude,k.longitude);
     var bon = precision<=12 || (!pasDispo() && precision<=25);
-    if(compas==null && k.heading!=null && !isNaN(k.heading) && k.speed>0.4) cap=k.heading;
+    if(k.heading!=null && !isNaN(k.heading) && k.speed>0.4){
+      // en marche dehors, le cap GPS est fiable : on recale dessus et on efface la dérive du gyroscope
+      cap=k.heading;dernierGyro=0;
+    }
     if(bon){
       // premier bon signal : on raccorde le GPS à ce qui a déjà été tracé aux pas
       if(!etat.dec) etat.dec = moi ? {x:moi.x-brut.x,y:moi.y-brut.y} : {x:0,y:0};
@@ -174,7 +177,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     }
     majTout();
   }
-  function pasDispo(){return capteursOn && compas!=null;}
+  function pasDispo(){return capteursOn && cap!=null;}
   function enregistrer(seuil){
     var d=etat.trace.length?etat.trace[etat.trace.length-1]:null;
     if(!d || dist(d,moi)>=seuil){
@@ -186,7 +189,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
   function majStatut(){
     if(surveillant==null)return;
     if(interieur()){
-      $('gps').innerHTML = compas!=null ? '<b>'+nbPas+'</b> pas comptés' : 'Capteurs de mouvement non reçus';
+      $('gps').innerHTML = cap!=null ? '<b>'+nbPas+'</b> pas comptés' : 'Capteurs de mouvement non reçus';
       return;
     }
     var gpsBon=Date.now()-dernierBon<4000;
@@ -195,8 +198,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     else if(precision)$('gps').innerHTML='GPS faible <b>± '+Math.round(precision)+' m</b>';
   }
 
-  // ---------- Capteurs de mouvement : pas + boussole ----------
-  var grav=9.81, liss=0, dernierPas=0, haut=false, dernierDessin=0;
+  // ---------- Capteurs de mouvement : pas + gyroscope + boussole ----------
+  var grav=9.81, liss=0, dernierPas=0, haut=false, dernierDessin=0, dernierGyro=0;
   function surMouvement(e){
     var a=e.accelerationIncludingGravity; if(!a||a.x==null)return;
     var m=Math.hypot(a.x,a.y,a.z);
@@ -204,13 +207,28 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     var t=Date.now();
     if(!haut && liss>1.1 && t-dernierPas>320){haut=true;dernierPas=t;unPas();}
     if(haut && liss<0)haut=false;
+
+    // Le gyroscope capte les virages (tourner à droite/à gauche) sans se faire dérouter
+    // par le métal des kiosques, contrairement au magnétomètre (boussole). On projette la
+    // vitesse de rotation sur l'axe de la gravité pour isoler le lacet, quelle que soit
+    // l'inclinaison du téléphone, et on l'intègre en continu à partir du dernier cap connu.
+    var rr=e.rotationRate;
+    if(rr && rr.alpha!=null && cap!=null){
+      var gm=Math.hypot(a.x,a.y,a.z)||1;
+      var vitesseCap=(rr.beta*a.x + rr.gamma*a.y + rr.alpha*a.z)/gm; // degrés/s autour de la verticale
+      if(dernierGyro){
+        var dt=(t-dernierGyro)/1000;
+        if(dt>0 && dt<0.5)cap=(cap - vitesseCap*dt + 360)%360;
+      }
+      dernierGyro=t;
+    }
   }
   function unPas(){
     if(surveillant==null)return;
     nbPas++;
-    if(Date.now()-dernierBon<4000 || compas==null)return; // le GPS est bon : il a priorité
+    if(Date.now()-dernierBon<4000 || cap==null)return; // le GPS est bon : il a priorité
     if(!moi)moi={x:0,y:0};
-    var r=compas*Math.PI/180;
+    var r=cap*Math.PI/180;
     moi={x:moi.x+LONGUEUR_PAS*Math.sin(r),y:moi.y+LONGUEUR_PAS*Math.cos(r)};
     enregistrer(2);
     majTout();
@@ -219,7 +237,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     var h=e.webkitCompassHeading;
     if(h==null && e.absolute && e.alpha!=null)h=(360-e.alpha)%360;
     if(h==null)return;
-    compas=h;cap=h;
+    compas=h;
+    if(cap==null)cap=h; // premier repère seulement : ensuite le gyroscope prend le relais
     var t=Date.now();if(t-dernierDessin>200){dernierDessin=t;majGuide();dessiner();}
   }
   function activerCapteurs(){
