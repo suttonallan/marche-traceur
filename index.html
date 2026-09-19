@@ -59,9 +59,22 @@ button.gros{border:0;border-radius:16px;padding:16px 10px;font:inherit;font-size
 #marche{background:transparent;color:var(--encre);border:2px solid var(--encre)}
 #marche.actif{background:var(--trace);border-color:var(--trace);color:#fff}
 #marquer{background:var(--kiosque);color:#fff}
-#marquer:disabled{opacity:.4}
+button.gros:disabled{opacity:.4}
 #bas{display:flex;justify-content:space-between;padding:0 16px 8px;font-size:.8rem;color:var(--doux)}
 #bas button{background:none;border:0;color:var(--doux);font:inherit;text-decoration:underline;padding:4px 0}
+#bas2{display:flex;justify-content:space-between;padding:0 16px 10px;font-size:.85rem}
+#bas2 button{background:none;border:0;color:var(--encre);font:inherit;font-weight:700;text-decoration:underline;padding:4px 0}
+#bas2 button:disabled{opacity:.4;text-decoration:none}
+
+#bandeauConsult{margin:0 12px 8px;padding:10px 14px;border-radius:14px;background:var(--ligne);color:var(--encre);display:none;align-items:center;gap:12px}
+#bandeauConsult.on{display:flex}
+#bandeauConsult .n{font-size:.9rem;font-weight:700;flex:1}
+#bandeauConsult button{background:var(--bouton);color:var(--boutonTexte);border:0;border-radius:999px;font:inherit;font-size:.8rem;font-weight:700;padding:8px 14px}
+
+.ligneHist{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--ligne)}
+.ligneHist:last-child{border-bottom:0}
+.ligneHist .actions{display:flex;gap:8px;flex:none}
+.ligneHist .actions button{padding:8px 12px;min-height:auto;font-size:.85rem;border-radius:10px}
 
 #feuille{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:5}
 #feuille.on{display:flex}
@@ -88,6 +101,11 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
   <button id="gFermer" aria-label="Arrêter le guidage">×</button>
 </div>
 
+<div id="bandeauConsult">
+  <div class="n">Vous consultez : <span id="ncNom"></span></div>
+  <button id="ncFermer">Fermer</button>
+</div>
+
 <div id="zone">
   <canvas id="c"></canvas>
   <div id="vide">Appuyez sur « Démarrer » en arrivant au marché.<br>Tenez le téléphone pointé devant vous : votre parcours se dessine ici.</div>
@@ -101,13 +119,18 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
   <button class="gros" id="marquer" disabled>Marquer ce kiosque</button>
 </footer>
 <div id="bas"><button id="mode"></button><span id="stats"></span><button id="effacer">Tout effacer</button></div>
+<div id="bas2"><button id="nouveauLieu">Nouveau lieu</button><button id="ouvrirHistorique">Historique</button></div>
 
 <div id="feuille"><div class="boite" id="boite"></div></div>
 
 <script>
 (function(){
   var CLE='marche-traceur-v1';
+  var CLE_HIST='marche-traceur-historique-v1';
   var etat={trace:[],kiosques:[],origine:null,seq:0};
+  var hist=[]; // lieux archivés : {id,nom,date,etat:{trace,kiosques,origine,seq}}
+  var consult=null; // {nom,etat} du lieu en cours de consultation, ou null en mode direct
+  var choisiAvant=null;
   var compas=null, nbPas=0, dernierBon=0, capteursOn=false, LONGUEUR_PAS=0.7;
   var moi=null, cap=null, precision=null, veille=null, surveillant=null, choisi=null;
   var vue=null; // vue manuelle {cx,cy,echelle} ou null = cadrage auto
@@ -116,7 +139,15 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
 
   function charger(){try{var s=localStorage.getItem(CLE);if(s){var o=JSON.parse(s);if(o&&o.trace)etat=o;}}catch(e){}}
   function sauver(){try{localStorage.setItem(CLE,JSON.stringify(etat));}catch(e){}}
+  function chargerHistorique(){try{var s=localStorage.getItem(CLE_HIST);if(s){var o=JSON.parse(s);if(Array.isArray(o))hist=o;}}catch(e){}}
+  function sauverHistorique(){try{localStorage.setItem(CLE_HIST,JSON.stringify(hist));}catch(e){}}
   charger();
+  chargerHistorique();
+
+  // Etat et position affichés : ceux du lieu consulté, sinon ceux du direct
+  function etatVue(){return consult?consult.etat:etat;}
+  function moiVue(){return consult?null:moi;}
+  function distanceTotale(st){var t=0;for(var i=1;i<st.trace.length;i++)t+=dist(st.trace[i-1],st.trace[i]);return t;}
 
   // Projection locale en mètres
   function xy(lat,lon){
@@ -279,33 +310,118 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
 
   var confirme=0;
   $('effacer').onclick=function(){
+    if(consult)return;
     if(Date.now()-confirme<4000){
       etat={trace:[],kiosques:[],origine:null,seq:0,mode:etat.mode};moi=null;choisi=null;vue=null;nbPas=0;sauver();
       this.textContent='Tout effacer';confirme=0;majTout();
     }else{confirme=Date.now();this.textContent='Appuyez encore pour confirmer';var b=this;setTimeout(function(){b.textContent='Tout effacer'},4000);}
   };
 
+  // ---------- Nouveau lieu (archive le parcours actuel, repart de zéro) ----------
+  function nouveauLieu(){
+    if(consult)return;
+    if(!etat.trace.length && !etat.kiosques.length)return; // rien à archiver
+    ouvrir('<h2>Nouveau lieu</h2><p>Le parcours actuel sera enregistré dans l’historique. Un nom pour vous en souvenir (facultatif) :</p>'+
+      '<input id="nomLieu" placeholder="ex. Marché Jean-Talon" autocomplete="off" enterkeyhint="done">'+
+      '<div class="rang"><button class="gros sec" id="nlAnn">Annuler</button><button class="gros pri" id="nlOk">Enregistrer et recommencer</button></div>');
+    var valider=function(){
+      var nom=($('nomLieu').value||'').trim();
+      if(!nom){var d=new Date();nom=d.toLocaleDateString('fr-CA',{day:'numeric',month:'short'})+' '+d.toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'});}
+      hist.push({id:Date.now(),nom:nom,date:Date.now(),etat:{trace:etat.trace,kiosques:etat.kiosques,origine:etat.origine,seq:etat.seq}});
+      sauverHistorique();
+      if(surveillant!=null)arreter();
+      etat={trace:[],kiosques:[],origine:null,seq:0,mode:etat.mode};
+      moi=null;choisi=null;vue=null;nbPas=0;dernierBon=0;precision=null;cap=null;
+      sauver();fermer();majTout();
+    };
+    $('nlOk').onclick=valider;$('nlAnn').onclick=fermer;
+    $('nomLieu').onkeydown=function(e){if(e.key==='Enter')valider();};
+    setTimeout(function(){try{$('nomLieu').focus()}catch(e){}},50);
+  }
+  $('nouveauLieu').onclick=nouveauLieu;
+
+  // ---------- Historique des lieux ----------
+  function ouvrirHistorique(){
+    var html='<h2>Historique</h2>';
+    if(!hist.length){
+      html+='<p>Aucun lieu enregistré pour l’instant. « Nouveau lieu » archive le parcours en cours quand vous en commencez un autre.</p>';
+    }else{
+      html+='<p>Touchez un lieu pour revoir sa carte.</p><div style="max-height:45vh;overflow-y:auto">';
+      hist.slice().reverse().forEach(function(v){
+        var d=new Date(v.date);
+        var nb=v.etat.kiosques.length;
+        var resume=Math.round(distanceTotale(v.etat))+' m · '+nb+' kiosque'+(nb!==1?'s':'');
+        html+='<div class="ligneHist" data-id="'+v.id+'">'+
+          '<div><div style="font-weight:700">'+echap(v.nom)+'</div>'+
+          '<div style="color:var(--doux);font-size:.8rem">'+d.toLocaleDateString('fr-CA',{day:'numeric',month:'short',year:'numeric'})+' · '+d.toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'})+' · '+resume+'</div></div>'+
+          '<div class="actions"><button class="gros sec histRevoir">Revoir</button><button class="gros suppr histSuppr">Suppr.</button></div>'+
+        '</div>';
+      });
+      html+='</div>';
+    }
+    html+='<div class="rang" style="grid-template-columns:1fr;margin-top:14px"><button class="gros sec" id="histFermer">Fermer</button></div>';
+    ouvrir(html);
+    $('histFermer').onclick=fermer;
+    $('boite').querySelectorAll('.histRevoir').forEach(function(b){
+      b.onclick=function(){var id=+b.closest('.ligneHist').dataset.id;fermer();regarderVisite(id);};
+    });
+    $('boite').querySelectorAll('.histSuppr').forEach(function(b){
+      b.onclick=function(){var id=+b.closest('.ligneHist').dataset.id;hist=hist.filter(function(v){return v.id!==id});sauverHistorique();ouvrirHistorique();};
+    });
+  }
+  $('ouvrirHistorique').onclick=ouvrirHistorique;
+
+  function regarderVisite(id){
+    var v=hist.filter(function(z){return z.id===id})[0];if(!v)return;
+    choisiAvant=choisi;choisi=null;vue=null;
+    consult={nom:v.nom,etat:v.etat};
+    majTout();
+  }
+  function fermerConsultation(){
+    consult=null;choisi=choisiAvant;choisiAvant=null;vue=null;
+    majTout();
+  }
+  $('ncFermer').onclick=fermerConsultation;
+
+  function voirKiosqueArchive(k){
+    ouvrir('<h2>Kiosque '+k.id+(k.nom?' · '+echap(k.nom):'')+'</h2><p>Marqué à '+new Date(k.h).toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'})+'</p>'+
+      '<div class="rang" style="grid-template-columns:1fr"><button class="gros sec" id="vkFermer">Fermer</button></div>');
+    $('vkFermer').onclick=fermer;
+  }
+
   // ---------- Affichage ----------
-  function majTout(){$('marquer').disabled=!moi;majStatut();majListe();majGuide();majStats();dessiner();}
+  function majTout(){
+    $('marquer').disabled=!!consult||!moiVue();
+    $('marche').disabled=!!consult;
+    $('nouveauLieu').disabled=!!consult;
+    $('effacer').disabled=!!consult;
+    if(consult){$('bandeauConsult').classList.add('on');$('ncNom').textContent=consult.nom;}
+    else{$('bandeauConsult').classList.remove('on');}
+    if(!consult&&surveillant==null)$('marche').textContent=etat.trace.length?'Reprendre':'Démarrer';
+    majStatut();majListe();majGuide();majStats();dessiner();
+  }
 
   function majStats(){
-    var t=0;for(var i=1;i<etat.trace.length;i++)t+=dist(etat.trace[i-1],etat.trace[i]);
-    $('stats').textContent=etat.trace.length?Math.round(t)+' m parcourus':'';
-    $('vide').style.display=(etat.trace.length||moi)?'none':'flex';
+    var st=etatVue(),mv=moiVue();
+    var t=distanceTotale(st);
+    $('stats').textContent=st.trace.length?Math.round(t)+' m parcourus':'';
+    $('vide').style.display=(st.trace.length||mv)?'none':'flex';
   }
 
   function majListe(){
+    var st=etatVue(),mv=moiVue();
     var l=$('liste');l.innerHTML='';
-    etat.kiosques.forEach(function(k){
-      var b=document.createElement('button');b.className='puce'+(k.id===choisi?' sel':'');
-      var d=moi?' <small>'+Math.round(dist(moi,k))+' m</small>':'';
+    st.kiosques.forEach(function(k){
+      var b=document.createElement('button');b.className='puce'+(k.id===choisi&&!consult?' sel':'');
+      var d=mv?' <small>'+Math.round(dist(mv,k))+' m</small>':'';
       b.innerHTML='<i>'+k.id+'</i>'+(k.nom?echap(k.nom):'Kiosque')+d;
-      b.onclick=function(){ouvrirKiosque(k)};
+      b.onclick=consult?function(){voirKiosqueArchive(k)}:function(){ouvrirKiosque(k)};
       l.appendChild(b);
     });
   }
 
   function majGuide(){
+    if(consult){$('guide').classList.remove('on');return;}
     var k=etat.kiosques.filter(function(z){return z.id===choisi})[0];
     if(!k){$('guide').classList.remove('on');return;}
     $('guide').classList.add('on');
@@ -320,7 +436,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
 
   function cadrage(w,h){
     if(vue)return vue;
-    var pts=etat.trace.concat(etat.kiosques);if(moi)pts=pts.concat([moi]);
+    var st=etatVue(),mv=moiVue();
+    var pts=st.trace.concat(st.kiosques);if(mv)pts=pts.concat([mv]);
     if(!pts.length)return {cx:0,cy:0,echelle:w/40};
     var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
     pts.forEach(function(p){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);});
@@ -329,6 +446,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
   }
 
   function dessiner(){
+    var st=etatVue(),mv=moiVue();
     var r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
     if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr);}
     ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -353,23 +471,23 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     ctx.fillText('N ↑',14,22);
 
     // tracé
-    if(etat.trace.length>1){
+    if(st.trace.length>1){
       ctx.strokeStyle=couleur('--trace');ctx.lineWidth=5;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();
-      etat.trace.forEach(function(p,i){var q=P(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+      st.trace.forEach(function(p,i){var q=P(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
       ctx.stroke();
     }
-    if(etat.trace.length){
-      var e=P(etat.trace[0]);ctx.fillStyle=couleur('--trace');ctx.beginPath();ctx.arc(e.x,e.y,6,0,7);ctx.fill();
+    if(st.trace.length){
+      var e=P(st.trace[0]);ctx.fillStyle=couleur('--trace');ctx.beginPath();ctx.arc(e.x,e.y,6,0,7);ctx.fill();
       ctx.fillStyle=couleur('--doux');ctx.fillText('Entrée',e.x+10,e.y+4);
     }
 
     // ligne de guidage
-    var cible=etat.kiosques.filter(function(z){return z.id===choisi})[0];
-    if(cible&&moi){var m1=P(moi),m2=P(cible);ctx.strokeStyle=couleur('--choisi');ctx.lineWidth=3;ctx.setLineDash([8,7]);ctx.beginPath();ctx.moveTo(m1.x,m1.y);ctx.lineTo(m2.x,m2.y);ctx.stroke();ctx.setLineDash([]);}
+    var cible=consult?null:etat.kiosques.filter(function(z){return z.id===choisi})[0];
+    if(cible&&mv){var m1=P(mv),m2=P(cible);ctx.strokeStyle=couleur('--choisi');ctx.lineWidth=3;ctx.setLineDash([8,7]);ctx.beginPath();ctx.moveTo(m1.x,m1.y);ctx.lineTo(m2.x,m2.y);ctx.stroke();ctx.setLineDash([]);}
 
     // kiosques
-    etat.kiosques.forEach(function(k){
-      var q=P(k),sel=k.id===choisi;
+    st.kiosques.forEach(function(k){
+      var q=P(k),sel=!consult&&k.id===choisi;
       ctx.fillStyle=sel?couleur('--choisi'):couleur('--kiosque');
       ctx.beginPath();ctx.arc(q.x,q.y-14,13,0,7);ctx.fill();
       ctx.beginPath();ctx.moveTo(q.x-8,q.y-5);ctx.lineTo(q.x,q.y+3);ctx.lineTo(q.x+8,q.y-5);ctx.fill();
@@ -379,8 +497,8 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     });
 
     // moi
-    if(moi){
-      var o=P(moi);
+    if(mv){
+      var o=P(mv);
       if(precision){ctx.fillStyle=couleur('--moi');ctx.globalAlpha=.13;ctx.beginPath();ctx.arc(o.x,o.y,Math.max(precision*v.echelle,10),0,7);ctx.fill();ctx.globalAlpha=1;}
       if(cap!=null){ctx.save();ctx.translate(o.x,o.y);ctx.rotate(cap*Math.PI/180);ctx.fillStyle=couleur('--moi');ctx.beginPath();ctx.moveTo(0,-22);ctx.lineTo(8,-9);ctx.lineTo(-8,-9);ctx.fill();ctx.restore();}
       ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(o.x,o.y,10,0,7);ctx.fill();
