@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Mon tracé au marché</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap">
+<style>
+:root{
+  --fond:#E9EFEC; --carte:#F8FBF9; --encre:#12241C; --doux:#5C6F66; --ligne:#C9D6CF;
+  --trace:#1F6F54; --moi:#1457D9; --kiosque:#D8361E; --choisi:#E0A100; --bouton:#12241C; --boutonTexte:#F8FBF9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --fond:#0E1814; --carte:#15231D; --encre:#EAF2EE; --doux:#93A69C; --ligne:#2A3C34;
+    --trace:#5FD0A5; --moi:#6EA2FF; --kiosque:#FF6B52; --choisi:#FFC83D; --bouton:#EAF2EE; --boutonTexte:#0E1814;
+  }
+}
+:root[data-theme="dark"]{
+  --fond:#0E1814; --carte:#15231D; --encre:#EAF2EE; --doux:#93A69C; --ligne:#2A3C34;
+  --trace:#5FD0A5; --moi:#6EA2FF; --kiosque:#FF6B52; --choisi:#FFC83D; --bouton:#EAF2EE; --boutonTexte:#0E1814;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{
+  background:var(--fond);color:var(--encre);
+  font-family:"Bricolage Grotesque",-apple-system,"Helvetica Neue",Arial,sans-serif;
+  display:flex;flex-direction:column;overflow:hidden;
+  padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+header{display:flex;align-items:baseline;justify-content:space-between;padding:10px 16px 6px}
+h1{font-size:1.25rem;font-weight:800;margin:0;letter-spacing:-.02em}
+#gps{font-size:.85rem;color:var(--doux);text-align:right}
+#gps b{color:var(--encre);font-weight:600}
+
+#guide{margin:0 12px 8px;padding:10px 14px;border-radius:14px;background:var(--choisi);color:#12241C;display:none;align-items:center;gap:12px}
+#guide.on{display:flex}
+#fleche{width:44px;height:44px;flex:none;transition:transform .3s}
+#guide .d{font-size:1.7rem;font-weight:800;line-height:1}
+#guide .n{font-size:.9rem;font-weight:600}
+#guide .r{font-size:.75rem;opacity:.8}
+#guide button{margin-left:auto;background:none;border:0;font:inherit;font-size:1.5rem;color:#12241C;padding:6px 8px}
+
+#zone{position:relative;flex:1;min-height:0;margin:0 12px;border-radius:18px;background:var(--carte);border:1px solid var(--ligne);overflow:hidden}
+canvas{width:100%;height:100%;display:block}
+#vide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;color:var(--doux);font-size:1rem;line-height:1.45}
+#recentrer{position:absolute;right:10px;top:10px;border:1px solid var(--ligne);background:var(--carte);color:var(--encre);border-radius:999px;padding:8px 12px;font:inherit;font-size:.8rem;font-weight:600;display:none}
+
+#liste{display:flex;gap:8px;overflow-x:auto;padding:10px 12px 2px;min-height:52px;scrollbar-width:none}
+#liste::-webkit-scrollbar{display:none}
+.puce{flex:none;display:flex;align-items:center;gap:8px;border:1px solid var(--ligne);background:var(--carte);color:var(--encre);border-radius:999px;padding:8px 14px 8px 8px;font:inherit;font-size:.9rem;font-weight:600}
+.puce i{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--kiosque);color:#fff;font-size:.8rem}
+.puce.sel{border-color:var(--choisi);box-shadow:0 0 0 2px var(--choisi) inset}
+.puce.sel i{background:var(--choisi);color:#12241C}
+.puce small{color:var(--doux);font-weight:400}
+
+footer{display:grid;grid-template-columns:1fr 2fr;gap:10px;padding:10px 12px 12px}
+button.gros{border:0;border-radius:16px;padding:16px 10px;font:inherit;font-size:1.05rem;font-weight:800;min-height:60px}
+#marche{background:transparent;color:var(--encre);border:2px solid var(--encre)}
+#marche.actif{background:var(--trace);border-color:var(--trace);color:#fff}
+#marquer{background:var(--kiosque);color:#fff}
+#marquer:disabled{opacity:.4}
+#bas{display:flex;justify-content:space-between;padding:0 16px 8px;font-size:.8rem;color:var(--doux)}
+#bas button{background:none;border:0;color:var(--doux);font:inherit;text-decoration:underline;padding:4px 0}
+
+#feuille{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:5}
+#feuille.on{display:flex}
+#feuille .boite{width:100%;background:var(--carte);border-radius:22px 22px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom))}
+#feuille h2{margin:0 0 4px;font-size:1.15rem}
+#feuille p{margin:0 0 12px;color:var(--doux);font-size:.9rem}
+#feuille input{width:100%;font:inherit;font-size:1.1rem;padding:14px;border-radius:12px;border:2px solid var(--ligne);background:var(--fond);color:var(--encre)}
+#feuille .rang{display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:12px}
+#feuille .sec{background:transparent;border:2px solid var(--ligne);color:var(--encre)}
+#feuille .pri{background:var(--bouton);color:var(--boutonTexte)}
+#feuille .suppr{background:transparent;color:var(--kiosque);border:2px solid var(--kiosque)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mon tracé au marché</h1>
+  <div id="gps">GPS arrêté</div>
+</header>
+
+<div id="guide">
+  <svg id="fleche" viewBox="0 0 44 44"><circle cx="22" cy="22" r="21" fill="#12241C"/><path d="M22 8l9 22-9-5-9 5z" fill="#E0A100"/></svg>
+  <div><div class="d" id="gDist">–</div><div class="n" id="gNom"></div><div class="r" id="gRef"></div></div>
+  <button id="gFermer" aria-label="Arrêter le guidage">×</button>
+</div>
+
+<div id="zone">
+  <canvas id="c"></canvas>
+  <div id="vide">Appuyez sur « Démarrer » en arrivant au marché.<br>Tenez le téléphone pointé devant vous : votre parcours se dessine ici.</div>
+  <button id="recentrer">Tout voir</button>
+</div>
+
+<div id="liste"></div>
+
+<footer>
+  <button class="gros" id="marche">Démarrer</button>
+  <button class="gros" id="marquer" disabled>Marquer ce kiosque</button>
+</footer>
+<div id="bas"><button id="mode"></button><span id="stats"></span><button id="effacer">Tout effacer</button></div>
+
+<div id="feuille"><div class="boite" id="boite"></div></div>
+
+<script>
+(function(){
+  var CLE='marche-traceur-v1';
+  var etat={trace:[],kiosques:[],origine:null,seq:0};
+  var compas=null, nbPas=0, dernierBon=0, capteursOn=false, LONGUEUR_PAS=0.7;
+  var moi=null, cap=null, precision=null, veille=null, surveillant=null, choisi=null;
+  var vue=null; // vue manuelle {cx,cy,echelle} ou null = cadrage auto
+  var $=function(id){return document.getElementById(id)};
+  var c=$('c'), ctx=c.getContext('2d');
+
+  function charger(){try{var s=localStorage.getItem(CLE);if(s){var o=JSON.parse(s);if(o&&o.trace)etat=o;}}catch(e){}}
+  function sauver(){try{localStorage.setItem(CLE,JSON.stringify(etat));}catch(e){}}
+  charger();
+
+  // Projection locale en mètres
+  function xy(lat,lon){
+    if(!etat.origine)etat.origine={lat:lat,lon:lon};
+    var o=etat.origine;
+    return {x:(lon-o.lon)*111320*Math.cos(o.lat*Math.PI/180), y:(lat-o.lat)*110540};
+  }
+  function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+  function couleur(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+
+  function surPosition(p){
+    var k=p.coords; precision=k.accuracy;
+    var brut=xy(k.latitude,k.longitude);
+    var bon = precision<=12 || (!pasDispo() && precision<=25);
+    if(compas==null && k.heading!=null && !isNaN(k.heading) && k.speed>0.4) cap=k.heading;
+    if(bon){
+      // premier bon signal : on raccorde le GPS à ce qui a déjà été tracé aux pas
+      if(!etat.dec) etat.dec = moi ? {x:moi.x-brut.x,y:moi.y-brut.y} : {x:0,y:0};
+      moi={x:brut.x+etat.dec.x,y:brut.y+etat.dec.y};
+      dernierBon=Date.now();
+      enregistrer(Math.max(3,precision*0.4));
+    }else if(!moi){
+      moi={x:brut.x,y:brut.y}; // point de départ approximatif, les pas prennent le relais
+    }
+    majTout();
+  }
+  function pasDispo(){return capteursOn && compas!=null;}
+  function enregistrer(seuil){
+    var d=etat.trace.length?etat.trace[etat.trace.length-1]:null;
+    if(!d || dist(d,moi)>=seuil){
+      if(d && cap==null){cap=(Math.atan2(moi.x-d.x,moi.y-d.y)*180/Math.PI+360)%360;}
+      etat.trace.push({x:+moi.x.toFixed(1),y:+moi.y.toFixed(1)});
+      sauver();
+    }
+  }
+  function majStatut(){
+    if(surveillant==null)return;
+    if(interieur()){
+      $('gps').innerHTML = compas!=null ? '<b>'+nbPas+'</b> pas comptés' : 'Capteurs de mouvement non reçus';
+      return;
+    }
+    var gpsBon=Date.now()-dernierBon<4000;
+    if(gpsBon)$('gps').innerHTML='GPS <b>± '+Math.round(precision)+' m</b>';
+    else if(pasDispo())$('gps').innerHTML='GPS faible : je compte <b>vos pas</b> ('+nbPas+')';
+    else if(precision)$('gps').innerHTML='GPS faible <b>± '+Math.round(precision)+' m</b>';
+  }
+
+  // ---------- Capteurs de mouvement : pas + boussole ----------
+  var grav=9.81, liss=0, dernierPas=0, haut=false, dernierDessin=0;
+  function surMouvement(e){
+    var a=e.accelerationIncludingGravity; if(!a||a.x==null)return;
+    var m=Math.hypot(a.x,a.y,a.z);
+    grav=grav*0.98+m*0.02; liss=liss*0.7+(m-grav)*0.3;
+    var t=Date.now();
+    if(!haut && liss>1.1 && t-dernierPas>320){haut=true;dernierPas=t;unPas();}
+    if(haut && liss<0)haut=false;
+  }
+  function unPas(){
+    if(surveillant==null)return;
+    nbPas++;
+    if(Date.now()-dernierBon<4000 || compas==null)return; // le GPS est bon : il a priorité
+    if(!moi)moi={x:0,y:0};
+    var r=compas*Math.PI/180;
+    moi={x:moi.x+LONGUEUR_PAS*Math.sin(r),y:moi.y+LONGUEUR_PAS*Math.cos(r)};
+    enregistrer(2);
+    majTout();
+  }
+  function surOrientation(e){
+    var h=e.webkitCompassHeading;
+    if(h==null && e.absolute && e.alpha!=null)h=(360-e.alpha)%360;
+    if(h==null)return;
+    compas=h;cap=h;
+    var t=Date.now();if(t-dernierDessin>200){dernierDessin=t;majGuide();dessiner();}
+  }
+  function activerCapteurs(){
+    if(capteursOn)return;
+    var brancher=function(){capteursOn=true;window.addEventListener('devicemotion',surMouvement);window.addEventListener('deviceorientation',surOrientation);window.addEventListener('deviceorientationabsolute',surOrientation);};
+    try{
+      var dem=[];
+      if(window.DeviceMotionEvent&&DeviceMotionEvent.requestPermission)dem.push(DeviceMotionEvent.requestPermission());
+      if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission)dem.push(DeviceOrientationEvent.requestPermission());
+      if(dem.length)Promise.all(dem.map(function(p){return p.catch(function(){return 'denied'})})).then(function(r){if(r.indexOf('granted')>=0)brancher();});
+      else brancher();
+    }catch(e){}
+  }
+  function surErreur(e){
+    var m='GPS indisponible';
+    if(e.code===1)m='Localisation refusée. Autorisez-la dans Réglages › Safari › Position.';
+    else if(e.code===3)m='Recherche du signal GPS…';
+    $('gps').textContent=m;
+  }
+
+  function interieur(){return etat.mode!=='ext';}
+  function majMode(){$('mode').textContent=interieur()?'Mode intérieur (pas)':'Mode extérieur (GPS)';}
+  $('mode').onclick=function(){if(surveillant!=null)arreter();etat.mode=interieur()?'ext':'int';sauver();majMode();};
+  function demarrer(){
+    if(interieur()){
+      activerCapteurs();
+      surveillant='pas';
+      if(!moi)moi=etat.trace.length?{x:etat.trace[etat.trace.length-1].x,y:etat.trace[etat.trace.length-1].y}:{x:0,y:0};
+      enregistrer(0.1);
+      $('marche').textContent='Pause';$('marche').classList.add('actif');
+      garderEcran();majTout();
+      setTimeout(majStatut,3000);
+      return;
+    }
+    if(!navigator.geolocation){$('gps').textContent='Ce navigateur ne donne pas la position.';return;}
+    activerCapteurs();
+    surveillant=navigator.geolocation.watchPosition(surPosition,surErreur,{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+    $('marche').textContent='Pause';$('marche').classList.add('actif');
+    $('gps').textContent='Recherche du signal GPS…';
+    garderEcran();
+  }
+  function arreter(){
+    if(typeof surveillant==='number')navigator.geolocation.clearWatch(surveillant);
+    surveillant=null;
+    $('marche').textContent='Reprendre';$('marche').classList.remove('actif');
+    $('gps').textContent='En pause';
+    if(veille){try{veille.release()}catch(e){} veille=null;}
+  }
+  function garderEcran(){
+    if('wakeLock' in navigator){navigator.wakeLock.request('screen').then(function(w){veille=w}).catch(function(){});}
+  }
+  document.addEventListener('visibilitychange',function(){if(!document.hidden&&surveillant!=null)garderEcran();});
+
+  $('marche').onclick=function(){surveillant==null?demarrer():arreter();};
+
+  // ---------- Feuille du bas ----------
+  function ouvrir(html){$('boite').innerHTML=html;$('feuille').classList.add('on');}
+  function fermer(){$('feuille').classList.remove('on');}
+  $('feuille').onclick=function(e){if(e.target===this)fermer();};
+
+  $('marquer').onclick=function(){
+    if(!moi)return;
+    var ici={x:moi.x,y:moi.y};
+    ouvrir('<h2>Marquer ce kiosque</h2><p>Un mot pour vous en souvenir (facultatif).</p>'+
+      '<input id="nom" placeholder="ex. lampes, vinyles, outils" autocomplete="off" enterkeyhint="done">'+
+      '<div class="rang"><button class="gros sec" id="ann">Annuler</button><button class="gros pri" id="ok">Enregistrer</button></div>');
+    var valider=function(){
+      etat.seq++;
+      etat.kiosques.push({id:etat.seq,nom:($('nom').value||'').trim(),x:+ici.x.toFixed(1),y:+ici.y.toFixed(1),h:Date.now()});
+      sauver();fermer();majTout();
+    };
+    $('ok').onclick=valider;$('ann').onclick=fermer;
+    $('nom').onkeydown=function(e){if(e.key==='Enter')valider();};
+    setTimeout(function(){try{$('nom').focus()}catch(e){}},50);
+  };
+
+  function ouvrirKiosque(k){
+    ouvrir('<h2>Kiosque '+k.id+(k.nom?' · '+echap(k.nom):'')+'</h2><p>Marqué à '+new Date(k.h).toLocaleTimeString('fr-CA',{hour:'2-digit',minute:'2-digit'})+'</p>'+
+      '<div class="rang"><button class="gros suppr" id="sup">Supprimer</button><button class="gros pri" id="aller">M’y ramener</button></div>'+
+      '<div style="margin-top:10px"><button class="gros sec" id="ici" style="width:100%">Je suis devant : recaler ma position</button></div>');
+    $('ici').onclick=function(){moi={x:k.x,y:k.y};etat.trace.push({x:k.x,y:k.y});sauver();fermer();majTout();};
+    $('aller').onclick=function(){choisi=k.id;vue=null;fermer();majTout();};
+    $('sup').onclick=function(){etat.kiosques=etat.kiosques.filter(function(z){return z.id!==k.id});if(choisi===k.id)choisi=null;sauver();fermer();majTout();};
+  }
+  function echap(s){return s.replace(/[&<>"]/g,function(m){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]})}
+
+  $('gFermer').onclick=function(){choisi=null;majTout();};
+
+  var confirme=0;
+  $('effacer').onclick=function(){
+    if(Date.now()-confirme<4000){
+      etat={trace:[],kiosques:[],origine:null,seq:0,mode:etat.mode};moi=null;choisi=null;vue=null;nbPas=0;sauver();
+      this.textContent='Tout effacer';confirme=0;majTout();
+    }else{confirme=Date.now();this.textContent='Appuyez encore pour confirmer';var b=this;setTimeout(function(){b.textContent='Tout effacer'},4000);}
+  };
+
+  // ---------- Affichage ----------
+  function majTout(){$('marquer').disabled=!moi;majStatut();majListe();majGuide();majStats();dessiner();}
+
+  function majStats(){
+    var t=0;for(var i=1;i<etat.trace.length;i++)t+=dist(etat.trace[i-1],etat.trace[i]);
+    $('stats').textContent=etat.trace.length?Math.round(t)+' m parcourus':'';
+    $('vide').style.display=(etat.trace.length||moi)?'none':'flex';
+  }
+
+  function majListe(){
+    var l=$('liste');l.innerHTML='';
+    etat.kiosques.forEach(function(k){
+      var b=document.createElement('button');b.className='puce'+(k.id===choisi?' sel':'');
+      var d=moi?' <small>'+Math.round(dist(moi,k))+' m</small>':'';
+      b.innerHTML='<i>'+k.id+'</i>'+(k.nom?echap(k.nom):'Kiosque')+d;
+      b.onclick=function(){ouvrirKiosque(k)};
+      l.appendChild(b);
+    });
+  }
+
+  function majGuide(){
+    var k=etat.kiosques.filter(function(z){return z.id===choisi})[0];
+    if(!k){$('guide').classList.remove('on');return;}
+    $('guide').classList.add('on');
+    $('gNom').textContent='Kiosque '+k.id+(k.nom?' · '+k.nom:'');
+    if(!moi){$('gDist').textContent='–';$('gRef').textContent='En attente du GPS';return;}
+    var d=dist(moi,k);
+    $('gDist').textContent=d<8?'Vous y êtes':Math.round(d)+' m';
+    var rel=(Math.atan2(k.x-moi.x,k.y-moi.y)*180/Math.PI+360)%360;
+    if(cap!=null){$('fleche').style.transform='rotate('+(rel-cap)+'deg)';$('gRef').textContent=compas!=null?'Pointez le téléphone devant vous':'Flèche selon votre sens de marche';}
+    else{$('fleche').style.transform='rotate('+rel+'deg)';$('gRef').textContent='Flèche avec le nord en haut';}
+  }
+
+  function cadrage(w,h){
+    if(vue)return vue;
+    var pts=etat.trace.concat(etat.kiosques);if(moi)pts=pts.concat([moi]);
+    if(!pts.length)return {cx:0,cy:0,echelle:w/40};
+    var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+    pts.forEach(function(p){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);});
+    var lw=Math.max(x1-x0,40),lh=Math.max(y1-y0,40),m=46;
+    return {cx:(x0+x1)/2,cy:(y0+y1)/2,echelle:Math.min((w-2*m)/lw,(h-2*m)/lh)};
+  }
+
+  function dessiner(){
+    var r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+    if(c.width!==Math.round(r.width*dpr)||c.height!==Math.round(r.height*dpr)){c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr);}
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    var w=r.width,h=r.height;ctx.clearRect(0,0,w,h);
+    var v=cadrage(w,h);
+    var P=function(p){return {x:w/2+(p.x-v.cx)*v.echelle,y:h/2-(p.y-v.cy)*v.echelle}};
+    $('recentrer').style.display=vue?'block':'none';
+
+    // quadrillage 10 m
+    var pas=10;while(pas*v.echelle<28)pas*=2;
+    ctx.strokeStyle=couleur('--ligne');ctx.lineWidth=1;ctx.globalAlpha=.6;ctx.beginPath();
+    var gx0=Math.floor((v.cx-w/2/v.echelle)/pas)*pas,gy0=Math.floor((v.cy-h/2/v.echelle)/pas)*pas;
+    for(var gx=gx0;gx<v.cx+w/2/v.echelle;gx+=pas){var a=P({x:gx,y:0}).x;ctx.moveTo(a,0);ctx.lineTo(a,h);}
+    for(var gy=gy0;gy<v.cy+h/2/v.echelle;gy+=pas){var b=P({x:0,y:gy}).y;ctx.moveTo(0,b);ctx.lineTo(w,b);}
+    ctx.stroke();ctx.globalAlpha=1;
+
+    // échelle et nord
+    ctx.fillStyle=couleur('--doux');ctx.strokeStyle=couleur('--doux');ctx.lineWidth=2;
+    ctx.font='600 12px -apple-system,Helvetica,Arial,sans-serif';
+    ctx.beginPath();ctx.moveTo(14,h-16);ctx.lineTo(14+pas*v.echelle,h-16);ctx.stroke();
+    ctx.fillText(pas+' m',14,h-22);
+    ctx.fillText('N ↑',14,22);
+
+    // tracé
+    if(etat.trace.length>1){
+      ctx.strokeStyle=couleur('--trace');ctx.lineWidth=5;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();
+      etat.trace.forEach(function(p,i){var q=P(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y);});
+      ctx.stroke();
+    }
+    if(etat.trace.length){
+      var e=P(etat.trace[0]);ctx.fillStyle=couleur('--trace');ctx.beginPath();ctx.arc(e.x,e.y,6,0,7);ctx.fill();
+      ctx.fillStyle=couleur('--doux');ctx.fillText('Entrée',e.x+10,e.y+4);
+    }
+
+    // ligne de guidage
+    var cible=etat.kiosques.filter(function(z){return z.id===choisi})[0];
+    if(cible&&moi){var m1=P(moi),m2=P(cible);ctx.strokeStyle=couleur('--choisi');ctx.lineWidth=3;ctx.setLineDash([8,7]);ctx.beginPath();ctx.moveTo(m1.x,m1.y);ctx.lineTo(m2.x,m2.y);ctx.stroke();ctx.setLineDash([]);}
+
+    // kiosques
+    etat.kiosques.forEach(function(k){
+      var q=P(k),sel=k.id===choisi;
+      ctx.fillStyle=sel?couleur('--choisi'):couleur('--kiosque');
+      ctx.beginPath();ctx.arc(q.x,q.y-14,13,0,7);ctx.fill();
+      ctx.beginPath();ctx.moveTo(q.x-8,q.y-5);ctx.lineTo(q.x,q.y+3);ctx.lineTo(q.x+8,q.y-5);ctx.fill();
+      ctx.fillStyle=sel?'#12241C':'#fff';ctx.font='800 13px -apple-system,Helvetica,Arial,sans-serif';ctx.textAlign='center';
+      ctx.fillText(k.id,q.x,q.y-9.5);ctx.textAlign='left';
+      if(k.nom){ctx.fillStyle=couleur('--encre');ctx.font='600 12px -apple-system,Helvetica,Arial,sans-serif';ctx.fillText(k.nom,q.x+17,q.y-10);}
+    });
+
+    // moi
+    if(moi){
+      var o=P(moi);
+      if(precision){ctx.fillStyle=couleur('--moi');ctx.globalAlpha=.13;ctx.beginPath();ctx.arc(o.x,o.y,Math.max(precision*v.echelle,10),0,7);ctx.fill();ctx.globalAlpha=1;}
+      if(cap!=null){ctx.save();ctx.translate(o.x,o.y);ctx.rotate(cap*Math.PI/180);ctx.fillStyle=couleur('--moi');ctx.beginPath();ctx.moveTo(0,-22);ctx.lineTo(8,-9);ctx.lineTo(-8,-9);ctx.fill();ctx.restore();}
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(o.x,o.y,10,0,7);ctx.fill();
+      ctx.fillStyle=couleur('--moi');ctx.beginPath();ctx.arc(o.x,o.y,7,0,7);ctx.fill();
+    }
+  }
+
+  // ---------- Gestes : glisser et pincer ----------
+  var doigts={},depart=null;
+  function debutGeste(){
+    var r=c.getBoundingClientRect();var base=vue||cadrage(r.width,r.height);
+    var ids=Object.keys(doigts);
+    depart={vue:{cx:base.cx,cy:base.cy,echelle:base.echelle},pts:ids.map(function(i){return{x:doigts[i].x,y:doigts[i].y}})};
+  }
+  c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);doigts[e.pointerId]={x:e.clientX,y:e.clientY};debutGeste();});
+  c.addEventListener('pointermove',function(e){
+    if(!doigts[e.pointerId]||!depart)return;
+    doigts[e.pointerId]={x:e.clientX,y:e.clientY};
+    var ids=Object.keys(doigts),a=depart.pts,v0=depart.vue;
+    if(ids.length===1&&a.length===1){
+      var dx=doigts[ids[0]].x-a[0].x,dy=doigts[ids[0]].y-a[0].y;
+      if(!vue&&Math.hypot(dx,dy)<6)return;
+      vue={cx:v0.cx-dx/v0.echelle,cy:v0.cy+dy/v0.echelle,echelle:v0.echelle};
+    }else if(ids.length===2&&a.length===2){
+      var d0=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1;
+      var d1=Math.hypot(doigts[ids[0]].x-doigts[ids[1]].x,doigts[ids[0]].y-doigts[ids[1]].y);
+      vue={cx:v0.cx,cy:v0.cy,echelle:Math.max(.2,Math.min(40,v0.echelle*d1/d0))};
+    }
+    dessiner();
+  });
+  function finGeste(e){delete doigts[e.pointerId];if(Object.keys(doigts).length)debutGeste();else depart=null;}
+  c.addEventListener('pointerup',finGeste);c.addEventListener('pointercancel',finGeste);
+  c.style.touchAction='none';
+  $('recentrer').onclick=function(){vue=null;dessiner();};
+
+  window.addEventListener('resize',dessiner);
+  if(etat.trace.length){$('marche').textContent='Reprendre';}
+  majMode();
+  majTout();
+})();
+</script>
+</body>
+</html>
