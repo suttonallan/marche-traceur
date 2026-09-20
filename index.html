@@ -213,12 +213,13 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     // vitesse de rotation sur l'axe de la gravité pour isoler le lacet, quelle que soit
     // l'inclinaison du téléphone, et on l'intègre en continu à partir du dernier cap connu.
     var rr=e.rotationRate;
-    if(rr && rr.alpha!=null && cap!=null){
+    if(rr && typeof rr.alpha==='number' && typeof rr.beta==='number' && typeof rr.gamma==='number' && cap!=null){
       var gm=Math.hypot(a.x,a.y,a.z)||1;
       var vitesseCap=(rr.beta*a.x + rr.gamma*a.y + rr.alpha*a.z)/gm; // degrés/s autour de la verticale
       if(dernierGyro){
         var dt=(t-dernierGyro)/1000;
-        if(dt>0 && dt<0.5)cap=(cap - vitesseCap*dt + 360)%360;
+        var nouveauCap=(cap - vitesseCap*dt + 360)%360;
+        if(dt>0 && dt<0.5 && isFinite(nouveauCap))cap=nouveauCap;
       }
       dernierGyro=t;
     }
@@ -461,7 +462,12 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
     pts.forEach(function(p){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);});
     var lw=Math.max(x1-x0,40),lh=Math.max(y1-y0,40),m=46;
-    return {cx:(x0+x1)/2,cy:(y0+y1)/2,echelle:Math.min((w-2*m)/lw,(h-2*m)/lh)};
+    var echelle=Math.min((w-2*m)/lw,(h-2*m)/lh);
+    // Repli si le cadre est momentanément trop petit ou invalide (ex. barre Safari qui
+    // bouge à l'entrée d'un bâtiment) : une échelle nulle ou négative ferait tourner sans
+    // fin la boucle du quadrillage ci-dessous et figerait toute la page.
+    if(!(echelle>0))echelle=0.5;
+    return {cx:(x0+x1)/2,cy:(y0+y1)/2,echelle:echelle};
   }
 
   function dessiner(){
@@ -475,7 +481,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--moi);outline-of
     $('recentrer').style.display=vue?'block':'none';
 
     // quadrillage 10 m
-    var pas=10;while(pas*v.echelle<28)pas*=2;
+    var pas=10,garde=0;while(pas*v.echelle<28 && garde++<30)pas*=2;
     ctx.strokeStyle=couleur('--ligne');ctx.lineWidth=1;ctx.globalAlpha=.6;ctx.beginPath();
     var gx0=Math.floor((v.cx-w/2/v.echelle)/pas)*pas,gy0=Math.floor((v.cy-h/2/v.echelle)/pas)*pas;
     for(var gx=gx0;gx<v.cx+w/2/v.echelle;gx+=pas){var a=P({x:gx,y:0}).x;ctx.moveTo(a,0);ctx.lineTo(a,h);}
